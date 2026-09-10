@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import uuid
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, ClassVar, Generic, TypeVar
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from aura.infrastructure.database.base import Base
 
@@ -48,3 +50,63 @@ class SQLAlchemyRepository(Generic[ModelT]):
     async def list_all(self) -> list[ModelT]:
         result = await self._session.execute(select(self.model_class))
         return list(result.scalars().all())  # type: ignore[arg-type]
+
+
+from aura.infrastructure.database.models import Conversation, Message  # noqa: E402
+
+
+class ConversationRepository(SQLAlchemyRepository[Conversation]):
+    """Repository for Conversation entities."""
+
+    model_class = Conversation
+
+    async def list_all(self) -> list[Conversation]:
+        """List all conversations (most recent first)."""
+        result = await self._session.execute(
+            select(Conversation).order_by(Conversation.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+
+class MessageRepository(SQLAlchemyRepository[Message]):
+    """Repository for Message entities."""
+
+    model_class = Message
+
+    async def get_by_conversation(self, conversation_id: UUID) -> list[Message]:
+        """Get all messages for a conversation, ordered by sequence."""
+        result = await self._session.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.sequence.asc())
+        )
+        return list(result.scalars().all())
+
+    async def get_last_n(self, conversation_id: UUID, n: int) -> list[Message]:
+        """Get last N messages from a conversation."""
+        messages = await self.get_by_conversation(conversation_id)
+        return messages[-n:] if n > 0 else []
+
+    async def add_message(
+        self,
+        conversation_id: UUID,
+        role: str,
+        content: str,
+    ) -> Message:
+        """Add a new message to a conversation."""
+        # Get the next sequence number
+        result = await self._session.execute(
+            select(func.max(Message.sequence)).where(Message.conversation_id == conversation_id)
+        )
+        max_seq = result.scalar() or 0
+
+        message = Message(
+            id=uuid.uuid4(),
+            conversation_id=conversation_id,
+            role=role,
+            content=content,
+            sequence=max_seq + 1,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        return await self.create(message)
