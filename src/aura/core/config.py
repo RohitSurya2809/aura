@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Literal
 
 from pydantic import SecretStr
@@ -78,7 +79,7 @@ class AuraSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="AURA_",
         env_nested_delimiter="__",
-        env_file=".env",
+        env_file=str(Path.cwd() / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )

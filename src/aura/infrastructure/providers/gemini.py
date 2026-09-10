@@ -43,10 +43,21 @@ class GeminiProvider(BaseProvider):
     async def generate(self, request: LLMRequest) -> ProviderResponse:
         """Generate response using Gemini."""
         try:
-            messages = self._messages_to_provider_format(request.messages)
+            # Gemini SDK expects messages in a specific format
+            # Convert our canonical messages to Gemini format
+            gemini_messages = []
+            for msg in request.messages:
+                if msg.role.value == "system":
+                    # System messages become part of the first user message
+                    # or use system_instruction parameter
+                    continue
+                gemini_messages.append(
+                    {"role": "user" if msg.role.value == "user" else "model",
+                     "parts": [{"text": msg.content}]}
+                )
 
             response = self._client.generate_content(
-                messages,
+                gemini_messages,
                 request_options={"timeout": self._timeout},
             )
 
@@ -84,10 +95,18 @@ class GeminiProvider(BaseProvider):
     async def _stream(self, request: LLMRequest) -> AsyncGenerator[StreamChunk, None]:
         """Actual streaming implementation."""
         try:
-            messages = self._messages_to_provider_format(request.messages)
+            # Gemini SDK expects messages in a specific format
+            gemini_messages = []
+            for msg in request.messages:
+                if msg.role.value == "system":
+                    continue
+                gemini_messages.append(
+                    {"role": "user" if msg.role.value == "user" else "model",
+                     "parts": [{"text": msg.content}]}
+                )
 
             response = self._client.generate_content(
-                messages,
+                gemini_messages,
                 stream=True,
                 request_options={"timeout": self._timeout},
             )
