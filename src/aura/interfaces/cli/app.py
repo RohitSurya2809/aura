@@ -85,6 +85,7 @@ async def _run_chat(
             MessageRepository,
         )
         from aura.infrastructure.providers.gemini import GeminiProvider
+        from aura.infrastructure.providers.openrouter import OpenRouterProvider
 
         async with application.db.session() as session:
             conv_repo = ConversationRepository(session)
@@ -93,8 +94,24 @@ async def _run_chat(
             # Create LLM service
             from aura.infrastructure.providers.router import ProviderRouter
 
-            gemini = GeminiProvider(application.settings.gemini)
-            router = ProviderRouter(primary=gemini)
+            # Auto-detect available providers
+            primary = None
+            fallback = None
+
+            # Prefer OpenRouter if available
+            if application.settings.openrouter.is_configured:
+                primary = OpenRouterProvider(application.settings.openrouter)
+                if application.settings.gemini.is_configured:
+                    fallback = GeminiProvider(application.settings.gemini)
+            elif application.settings.gemini.is_configured:
+                primary = GeminiProvider(application.settings.gemini)
+            else:
+                raise AuraError(
+                    "No LLM provider configured. "
+                    "Set AURA_OPENROUTER_API_KEY or AURA_GEMINI_API_KEY"
+                )
+
+            router = ProviderRouter(primary=primary, fallback=fallback)
             llm_service = LLMService(router=router)
 
             conv_service = ConversationService(
